@@ -163,28 +163,87 @@ def map_raw_to_clean(raw_items):
                     pass
 
         if dt_object:
+            # Voltage
+            v_A = safe_float(item.get('v_A'))
+            v_B = safe_float(item.get('v_B'))
+            v_C = safe_float(item.get('v_C'))
+            v_AD = safe_float(item.get('v_AD'))
+            v_BD = safe_float(item.get('v_BD'))
+            v_CD = safe_float(item.get('v_CD'))
+            
+            # Current
+            a_A = safe_float(item.get('a_A'))
+            a_B = safe_float(item.get('a_B'))
+            a_C = safe_float(item.get('a_C'))
+            
+            # Power
+            p_A = safe_float(item.get('aP_A'))
+            p_B = safe_float(item.get('aP_B'))
+            p_C = safe_float(item.get('aP_C'))
+            p_T = safe_float(item.get('aP_T'))
+            
+            # Power Factor
+            pf_A = safe_float(item.get('pF_A'))
+            pf_B = safe_float(item.get('pF_B'))
+            pf_C = safe_float(item.get('pF_C'))
+            
+            # Calculate averages
+            v_ln_avg = None
+            if all(v is not None for v in [v_A, v_B, v_C]):
+                v_ln_avg = (v_A + v_B + v_C) / 3
+                
+            v_ll_avg = None
+            if all(v is not None for v in [v_AD, v_BD, v_CD]):
+                v_ll_avg = (v_AD + v_BD + v_CD) / 3
+                
+            a_avg = None
+            if all(a is not None for a in [a_A, a_B, a_C]):
+                a_avg = (a_A + a_B + a_C) / 3
+                
+            pf_avg = None
+            if all(pf is not None for pf in [pf_A, pf_B, pf_C]):
+                pf_avg = (pf_A + pf_B + pf_C) / 3
+
+            # Energy (Lấy giá trị gốc, không nhân hệ số) và làm tròn 2 chữ số
+            energy_kWh = safe_float(item.get('importkwh'))
+            energy_bt  = safe_float(item.get('impbt'))
+            energy_cd  = safe_float(item.get('impcd'))
+            energy_td  = safe_float(item.get('imptd'))
+
+            if energy_kWh is not None: energy_kWh = round(energy_kWh, 2)
+            if energy_bt is not None:  energy_bt  = round(energy_bt, 2)
+            if energy_cd is not None:  energy_cd  = round(energy_cd, 2)
+            if energy_td is not None:  energy_td  = round(energy_td, 2)
+
             row = {
-                'ThoiGian':       dt_object,
-                'DienAp_A':       safe_float(item.get('v_A')), 
-                'DienAp_B':       safe_float(item.get('v_B')),
-                'DienAp_C':       safe_float(item.get('v_C')),
-                'DongDien_A':     safe_float(item.get('a_A')),
-                'DongDien_B':     safe_float(item.get('a_B')),
-                'DongDien_C':     safe_float(item.get('a_C')),
-                'CosPhi_A':       safe_float(item.get('pF_A')),
-                'CosPhi_B':       safe_float(item.get('pF_B')),
-                'CosPhi_C':       safe_float(item.get('pF_C')),
-                'TongCongSuat_P': safe_float(item.get('aP_T')),
-                'ChiSo_DienNang': safe_float(item.get('importkwh')), 
-                'CSDN_bt':        safe_float(item.get('impbt')), 
-                'CSDN_cd':        safe_float(item.get('impcd')), 
-                'CSDN_td':        safe_float(item.get('imptd'))
+                'voltage_AB':     round(v_AD, 2) if v_AD is not None else None,
+                'voltage_BC':     round(v_BD, 2) if v_BD is not None else None,
+                'voltage_CA':     round(v_CD, 2) if v_CD is not None else None,
+                'voltage_LL_avg': round(v_ll_avg, 2) if v_ll_avg is not None else None,
+                'voltage_AN':     round(v_A, 2) if v_A is not None else None,
+                'voltage_BN':     round(v_B, 2) if v_B is not None else None,
+                'voltage_CN':     round(v_C, 2) if v_C is not None else None,
+                'voltage_LN_avg': round(v_ln_avg, 2) if v_ln_avg is not None else None,
+                'current_A':      round(a_A, 2) if a_A is not None else None,
+                'current_B':      round(a_B, 2) if a_B is not None else None,
+                'current_C':      round(a_C, 2) if a_C is not None else None,
+                'current_avg':    round(a_avg, 2) if a_avg is not None else None,
+                'power_A':        round(p_A, 2) if p_A is not None else None,
+                'power_B':        round(p_B, 2) if p_B is not None else None,
+                'power_C':        round(p_C, 2) if p_C is not None else None,
+                'power_total':    round(p_T, 2) if p_T is not None else None,
+                'power_factor':   round(pf_avg, 2) if pf_avg is not None else None,
+                'energy_kWh':     energy_kWh, 
+                'energy_bt':      energy_bt,
+                'energy_cd':      energy_cd,
+                'energy_td':      energy_td,
+                'timestamp':      dt_object
             }
             clean_data.append(row)
             
     return clean_data
 
-def save_to_sqlserver_bulk(new_data, date_str, table_name="evncpc_tb"):
+def save_to_sqlserver_bulk(new_data, date_str, table_name="evncpc_tb_2"):
     if not new_data: return
 
     # Dùng engine global hoặc khởi tạo mới (khuyên dùng global nếu có)
@@ -196,16 +255,22 @@ def save_to_sqlserver_bulk(new_data, date_str, table_name="evncpc_tb"):
             
             # Câu lệnh SQL "Thông minh":
             # Thay vì INSERT VALUES, ta dùng INSERT SELECT ... WHERE NOT EXISTS
-            # Nó sẽ kiểm tra từng dòng: Nếu ThoiGian chưa có thì mới Insert.
+            # Nó sẽ kiểm tra từng dòng: Nếu timestamp chưa có thì mới Insert.
             insert_stmt = text(f"""
                 INSERT INTO {table_name} 
-                (ThoiGian, DienAp_A, DienAp_B, DienAp_C, DongDien_A, DongDien_B, DongDien_C, 
-                 CosPhi_A, CosPhi_B, CosPhi_C, TongCongSuat_P, ChiSo_DienNang, CSDN_bt, CSDN_cd, CSDN_td)
+                (voltage_AB, voltage_BC, voltage_CA, voltage_LL_avg, 
+                 voltage_AN, voltage_BN, voltage_CN, voltage_LN_avg, 
+                 current_A, current_B, current_C, current_avg, 
+                 power_A, power_B, power_C, power_total, 
+                 power_factor, energy_kWh, energy_bt, energy_cd, energy_td, timestamp)
                 SELECT 
-                    :ThoiGian, :DienAp_A, :DienAp_B, :DienAp_C, :DongDien_A, :DongDien_B, :DongDien_C, 
-                    :CosPhi_A, :CosPhi_B, :CosPhi_C, :TongCongSuat_P, :ChiSo_DienNang, :CSDN_bt, :CSDN_cd, :CSDN_td
+                    :voltage_AB, :voltage_BC, :voltage_CA, :voltage_LL_avg, 
+                    :voltage_AN, :voltage_BN, :voltage_CN, :voltage_LN_avg, 
+                    :current_A, :current_B, :current_C, :current_avg, 
+                    :power_A, :power_B, :power_C, :power_total, 
+                    :power_factor, :energy_kWh, :energy_bt, :energy_cd, :energy_td, :timestamp
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM {table_name} WHERE ThoiGian = :ThoiGian
+                    SELECT 1 FROM {table_name} WHERE timestamp = :timestamp
                 )
             """)
 
@@ -221,7 +286,7 @@ def get_latest_date_in_db():
     engine = create_engine(Config.get_db_uri())
     try:
         with engine.connect() as conn:
-            query = text(f"SELECT MAX(ThoiGian) FROM evncpc_tb")
+            query = text(f"SELECT MAX(timestamp) FROM evncpc_tb_2")
             result = conn.execute(query).fetchone()
             if result and result[0]:
                 return result[0].date()
@@ -305,7 +370,7 @@ def run_etl_transform(date_str):
 
 #     logger.info("Done.")
 
-# def save_to_sqlserver_safe(new_data, table_name="evncpc_tb"):
+# def save_to_sqlserver_safe(new_data, table_name="evncpc_tb_2"):
 #     if not new_data: return
 
 #     engine = create_engine(Config.get_db_uri())
@@ -313,10 +378,16 @@ def run_etl_transform(date_str):
 #     # Câu lệnh Insert cơ bản
 #     insert_stmt = text(f"""
 #         INSERT INTO {table_name} 
-#         (ThoiGian, DienAp_A, DienAp_B, DienAp_C, DongDien_A, DongDien_B, DongDien_C, 
-#          CosPhi_A, CosPhi_B, CosPhi_C, TongCongSuat_P, ChiSo_DienNang, CSDN_bt, CSDN_cd, CSDN_td)
-#         VALUES (:ThoiGian, :DienAp_A, :DienAp_B, :DienAp_C, :DongDien_A, :DongDien_B, :DongDien_C, 
-#                 :CosPhi_A, :CosPhi_B, :CosPhi_C, :TongCongSuat_P, :ChiSo_DienNang, :CSDN_bt, :CSDN_cd, :CSDN_td)
+#         (voltage_AB, voltage_BC, voltage_CA, voltage_LL_avg, 
+#          voltage_AN, voltage_BN, voltage_CN, voltage_LN_avg, 
+#          current_A, current_B, current_C, current_avg, 
+#          power_A, power_B, power_C, power_total, 
+#          power_factor, energy_kWh, energy_bt, energy_cd, energy_td, timestamp)
+#         VALUES (:voltage_AB, :voltage_BC, :voltage_CA, :voltage_LL_avg, 
+#                 :voltage_AN, :voltage_BN, :voltage_CN, :voltage_LN_avg, 
+#                 :current_A, :current_B, :current_C, :current_avg, 
+#                 :power_A, :power_B, :power_C, :power_total, 
+#                 :power_factor, :energy_kWh, :energy_bt, :energy_cd, :energy_td, :timestamp)
 #     """)
 
 #     count_success = 0
@@ -330,10 +401,10 @@ def run_etl_transform(date_str):
 #             except Exception as e:
 #                 # Nếu lỗi là do trùng khóa (IntegrityError/Duplicate key), ta bỏ qua êm đẹp
 #                 if "2627" in str(e) or "UNIQUE KEY" in str(e): 
-#                     # logger.warning(f"Bỏ qua bản ghi trùng: {item['ThoiGian']}")
+#                     # logger.warning(f"Bỏ qua bản ghi trùng: {item['timestamp']}")
 #                     pass
 #                 else:
-#                     logger.error(f"Lỗi insert dòng {item['ThoiGian']}: {e}")
+#                     logger.error(f"Lỗi insert dòng {item['timestamp']}: {e}")
                     
 #     logger.info(f"[SQL] Đã lưu thành công {count_success}/{len(new_data)} dòng.")
 
